@@ -1,0 +1,88 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    /* warm cream base, lightly textured feeling */
+    background-color: #fbf8f1;
+    background-image:
+      radial-gradient(rgba(58, 50, 38, 0.025) 1px, transparent 1px);
+    background-size: 18px 18px;
+  }
+
+  body {
+    @apply font-body text-ink-900 antialiased;
+    min-height: 100vh;
+  }
+
+  h1, h2, h3 {
+    @apply font-display tracking-tightest;
+  }
+
+  /* Number inputs without ugly spinners (we have +/- buttons instead) */
+  input[type='number']::-webkit-inner-spin-button,
+  input[type='number']::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type='number'] {
+    -moz-appearance: textfield;
+  }
+}
+
+@layer components {
+  .panel {
+    @apply bg-cream-50 border border-ink-700/15 rounded-md;
+    box-shadow: 0 1px 0 rgba(26, 24, 20, 0.04), 0 0 0 1px rgba(26, 24, 20, 0.02);
+  }
+
+  .panel-label {
+    @apply font-mono text-[11px] uppercase tracking-[0.18em] text-ink-500;
+  }
+
+  .field-input {
+    @apply font-mono text-ink-900 bg-cream-100/60 border border-ink-700/20
+           rounded px-3 py-2 focus:outline-none focus:border-ink-700/60
+           focus:bg-cream-50 transition-colors;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 px-5 py-3 rounded
+           bg-ink-900 text-cream-50 font-medium tracking-wide
+           hover:bg-ink-800 active:bg-ink-900
+           disabled:bg-ink-400 disabled:cursor-not-allowed
+           transition-colors;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded
+           border border-ink-700/30 text-ink-800 font-medium
+           hover:bg-cream-100 hover:border-ink-700/50
+           disabled:opacity-50 disabled:cursor-not-allowed
+           transition-colors;
+  }
+
+  .shuttle-btn {
+    @apply font-mono text-base w-12 h-12 rounded border
+           border-ink-700/25 text-ink-800 bg-cream-50
+           hover:border-ink-700/60 hover:bg-cream-100
+           transition-colors;
+  }
+
+  .shuttle-btn-active {
+    @apply bg-ink-900 text-cream-50 border-ink-900;
+  }
+}
+
+/* Subtle "weaving" decorative line - used in headers */
+.weave-line {
+  background-image: repeating-linear-gradient(
+    90deg,
+    rgba(26, 24, 20, 0.6) 0,
+    rgba(26, 24, 20, 0.6) 2px,
+    transparent 2px,
+    transparent 6px
+  );
+  height: 1px;
+}

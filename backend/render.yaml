@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: saree-jacquard-backend
+    runtime: python
+    region: oregon
+    plan: free  # upgrade to "starter" ($7/mo) for always-on, no cold starts
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: ALLOWED_ORIGINS
+        # Replace with your actual Vercel URL after first deploy.
+        # Multiple origins can be comma-separated.
+        value: https://your-frontend.vercel.app,http://localhost:5173
+      # Vercel preview deploys get unique URLs; if you use them, switch to
+      # using ALLOWED_ORIGIN_REGEX (requires a small code change) or list
+      # known preview URLs here.
+    healthCheckPath: /api/health

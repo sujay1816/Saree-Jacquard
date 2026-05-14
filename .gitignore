@@ -1,0 +1,45 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+venv/
+env/
+.venv/
+.env
+
+# ---- Node / frontend ----
+node_modules/
+dist/
+.vite/
+
+# Vite/Vercel env files (keep .env.example)
+.env.local
+.env.production.local
+.env.development.local
+frontend/.env
+
+# ---- Editors ----
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ---- Build / cache ----
+.cache/
+*.log
+
+# ---- Local sandbox ----
+/tmp/
+test_output/
+*.bmp.test
