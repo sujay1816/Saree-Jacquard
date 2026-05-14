@@ -26,10 +26,6 @@ export default function App() {
   const [previewUrl, setPreviewUrl] = useState(null);
   const [imageDims, setImageDims] = useState(null);
 
-  // ---- Export settings ----
-  const [motifCleanup, setMotifCleanup] = useState(false);
-  const [motifMinSize, setMotifMinSize] = useState(2);
-
   // ---- Conversion state ----
   const [isLoading, setIsLoading] = useState(false);
   const [isReExporting, setIsReExporting] = useState(false);
@@ -94,11 +90,6 @@ export default function App() {
     setServerError(null);
   }
 
-  function onExportChange(patch) {
-    if (patch.motifCleanup !== undefined) setMotifCleanup(patch.motifCleanup);
-    if (patch.motifMinSize !== undefined) setMotifMinSize(patch.motifMinSize);
-  }
-
   function onShuttleRename(idx, value) {
     setShuttleNames((prev) => {
       const next = [...prev];
@@ -120,8 +111,6 @@ export default function App() {
         pins: Number(pins),
         cards: Number(cards),
         shuttles,
-        motifCleanup,
-        motifMinSize,
         // No filename overrides on first pass; user renames after seeing palette
         shuttleFilenames: null,
       });
@@ -150,8 +139,6 @@ export default function App() {
         pins: Number(pins),
         cards: Number(cards),
         shuttles,
-        motifCleanup,
-        motifMinSize,
         shuttleFilenames: cleanedNames,
       });
       // Trigger download immediately
@@ -203,12 +190,7 @@ export default function App() {
             lockedReason="Enter pins, cards, and shuttle count first"
           />
 
-          <ExportSettings
-            motifCleanup={motifCleanup}
-            motifMinSize={motifMinSize}
-            onChange={onExportChange}
-            disabled={isLoading}
-          />
+          <ExportSettings />
 
           <ConvertButton
             canConvert={canConvert}

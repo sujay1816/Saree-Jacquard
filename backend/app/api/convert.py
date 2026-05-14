@@ -25,7 +25,6 @@ from app.config import (
     MIN_CARDS,
     MIN_PINS,
     MIN_SHUTTLES,
-    MOTIF_MIN_SIZE_MAX,
 )
 from app.processing.pipeline import run_pipeline
 from app.processing.validator import (
@@ -53,8 +52,6 @@ async def convert(
     pins: int = Form(..., description="Output BMP width"),
     cards: int = Form(..., description="Output BMP height"),
     shuttles: int = Form(..., description="Number of thread shuttles"),
-    motif_cleanup: bool = Form(False),
-    motif_min_size: int = Form(2),
     # JSON-encoded list of shuttle filename overrides, e.g. '["red_silk","gold"]'
     shuttle_filenames: Optional[str] = Form(None),
 ):
@@ -81,11 +78,6 @@ async def convert(
         raise _validation_error(
             f"Shuttle count must be between {MIN_SHUTTLES} and {MAX_SHUTTLES}.",
             f"Pick a value in the range {MIN_SHUTTLES}-{MAX_SHUTTLES}.",
-        )
-    if not (1 <= motif_min_size <= MOTIF_MIN_SIZE_MAX):
-        raise _validation_error(
-            f"Minimum motif size must be between 1 and {MOTIF_MIN_SIZE_MAX}.",
-            f"Pick a value in the range 1-{MOTIF_MIN_SIZE_MAX}.",
         )
 
     # ---- File handling ----
@@ -121,8 +113,6 @@ async def convert(
             pins=pins,
             cards=cards,
             num_shuttles=shuttles,
-            motif_cleanup=motif_cleanup,
-            motif_min_size=motif_min_size,
             shuttle_filenames=filename_overrides or None,
         )
     except ValidationError as e:

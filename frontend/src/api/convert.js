@@ -19,8 +19,6 @@ export async function convertImage({
   pins,
   cards,
   shuttles,
-  motifCleanup,
-  motifMinSize,
   shuttleFilenames, // optional array of strings
 }) {
   const form = new FormData();
@@ -28,8 +26,6 @@ export async function convertImage({
   form.append('pins', String(pins));
   form.append('cards', String(cards));
   form.append('shuttles', String(shuttles));
-  form.append('motif_cleanup', motifCleanup ? 'true' : 'false');
-  form.append('motif_min_size', String(motifMinSize));
   if (shuttleFilenames && shuttleFilenames.length) {
     form.append('shuttle_filenames', JSON.stringify(shuttleFilenames));
   }

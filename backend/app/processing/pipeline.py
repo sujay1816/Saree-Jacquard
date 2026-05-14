@@ -18,7 +18,7 @@ from app.processing.bmp_writer import (
     write_shuttle_bmp_bytes,
     write_shuttle_thumbnail_png_bytes,
 )
-from app.processing.cleanup import enforce_minimum_motif_size, remove_speckle
+from app.processing.cleanup import clean_labels
 from app.processing.preprocess import (
     apply_bilateral_filter,
     auto_resize_for_processing,
@@ -46,8 +46,6 @@ def run_pipeline(
     pins: int,
     cards: int,
     num_shuttles: int,
-    motif_cleanup: bool = False,
-    motif_min_size: int = 2,
     shuttle_filenames: list | None = None,
 ) -> PipelineResult:
     """
@@ -58,8 +56,6 @@ def run_pipeline(
         pins: output BMP width.
         cards: output BMP height.
         num_shuttles: number of thread shuttles to produce (2-8).
-        motif_cleanup: if True, enforce minimum motif size.
-        motif_min_size: minimum motif size in pixels when cleanup is on.
         shuttle_filenames: optional list of N filenames (no extension) to
             override the defaults. If None or shorter than N, defaults are
             used to fill in.
@@ -71,11 +67,16 @@ def run_pipeline(
         ValidationError: if the input image fails validation.
         Any underlying numpy/sklearn exceptions are allowed to propagate;
         the API layer wraps them in a generic 500 response.
+
+    Note on cleanup:
+        As of v1.1, aggressive preprocessing + post-quantization cleanup
+        is always applied (no toggles). This produces clean shuttle masks
+        for textured brocade close-ups, which is the primary use case.
     """
     # ---- 1. Validate and open ----
     pil_img, original_size = validate_and_open(image_bytes)
 
-    # ---- 2. Pre-process ----
+    # ---- 2. Pre-process (aggressive smoothing) ----
     working_img = auto_resize_for_processing(pil_img, pins, cards)
     rgb_array, image_shape = pil_to_rgb_array(working_img)
     smoothed = apply_bilateral_filter(rgb_array)
@@ -84,10 +85,8 @@ def run_pipeline(
     # ---- 3. Quantize ----
     qr = quantize_image(lab_pixels, image_shape, num_shuttles)
 
-    # ---- 4. Cleanup ----
-    labels = remove_speckle(qr.labels)
-    if motif_cleanup and motif_min_size > 1:
-        labels = enforce_minimum_motif_size(labels, motif_min_size)
+    # ---- 4. Cleanup (morphology + region drop, always on) ----
+    labels = clean_labels(qr.labels)
 
     # ---- 5. Resize to loom grid ----
     final_labels = resize_labels_to_grid(labels, pins, cards)

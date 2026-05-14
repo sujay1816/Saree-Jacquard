@@ -1,144 +1,101 @@
 """
 Post-quantization cleanup of the labels array.
 
-Two operations:
+This module is always-on as of v1.1: aggressive preprocessing combined with
+this cleanup produces clean, weaver-ready shuttle masks even for textured
+brocade close-ups.
 
-  1. `remove_speckle` - always-on. Kills isolated single pixels whose color
-     differs from all 8 neighbors. These are almost always quantization noise
-     or JPEG artifacts that would create single-pixel shuttle changes on the loom.
+Three operations, applied in order, for each shuttle (background label 0
+is preserved untouched):
 
-  2. `enforce_minimum_motif_size` - opt-in. Finds connected regions smaller
-     than the user's threshold and reassigns them to their largest neighbor.
-     Useful when the user wants to guarantee no thread floats below a certain
-     size. Disabled by default because some designs (zari hairlines) need
-     fine detail preserved.
+  1. Morphological closing  -> fills small holes inside a motif body.
+                               Result: solid motifs instead of "etched" ones.
+  2. Morphological opening  -> removes thin outlier strokes from a motif's
+                               boundary. Result: cleaner motif edges.
+  3. Small-region drop      -> any connected piece of a shuttle smaller than
+                               MIN_REGION_PIXELS is reassigned to background.
+                               Result: no single-pixel shuttle changes for
+                               the loom to thrash on.
+
+This pipeline was tuned against textured brocade saree photos. It assumes
+the user wants clean weaving output rather than pixel-perfect preservation
+of every gradient.
 """
 
 from __future__ import annotations
 
+import cv2
 import numpy as np
 from scipy import ndimage
 
+from app.config import (
+    MIN_REGION_PIXELS,
+    MORPH_CLOSE_SIZE,
+    MORPH_OPEN_SIZE,
+)
 
-def remove_speckle(labels: np.ndarray) -> np.ndarray:
+
+def clean_labels(labels: np.ndarray) -> np.ndarray:
     """
-    Replace each pixel whose 8 neighbors all share a label different from
-    itself with that neighbor label. Single-pass; not iterated.
+    Apply all cleanup steps to a quantized label array.
 
-    Quietly catches typical quantization noise without disturbing real
-    motif edges (real edges have at least one same-label neighbor).
-
-    `labels` is a 2D uint8 array. Returns a new array; input unchanged.
+    `labels` is HxW uint8 where 0 = background and 1..N = shuttles.
+    Returns a new labels array of the same shape and dtype.
     """
     if labels.size == 0:
         return labels.copy()
 
-    h, w = labels.shape
-    out = labels.copy()
-
-    # For each unique label, build a binary mask of its neighborhood
-    # using a 3x3 box filter. If a pixel of label L has zero same-label
-    # neighbors, it's isolated.
-    unique_labels = np.unique(labels)
-    if len(unique_labels) < 2:
-        return out  # nothing to do on a single-color image
-
-    # For speed, compute "is this pixel an isolated speckle of label L"
-    # via a single pass: a pixel is speckle iff sum of same-label neighbors
-    # (excluding self) is 0.
-    for lbl in unique_labels:
-        mask = (labels == lbl).astype(np.uint8)
-        # Count of same-label pixels in 3x3 neighborhood (including self)
-        neighbor_count = ndimage.uniform_filter(
-            mask.astype(np.float32), size=3, mode="constant", cval=0.0
-        ) * 9.0  # uniform_filter returns mean; multiply to get count
-        # Exclude self from count
-        neighbors_only = neighbor_count - mask
-        isolated_positions = (mask == 1) & (neighbors_only < 0.5)
-        if not np.any(isolated_positions):
-            continue
-
-        # Replace each isolated pixel with the most common neighbor label.
-        # Use the global mode of the immediate neighbors via a small loop;
-        # number of speckle pixels is typically small.
-        ys, xs = np.where(isolated_positions)
-        for y, x in zip(ys, xs):
-            y0, y1 = max(0, y - 1), min(h, y + 2)
-            x0, x1 = max(0, x - 1), min(w, x + 2)
-            neighborhood = labels[y0:y1, x0:x1].ravel()
-            # Exclude the center pixel itself
-            others = neighborhood[neighborhood != lbl]
-            if others.size > 0:
-                vals, counts = np.unique(others, return_counts=True)
-                out[y, x] = vals[np.argmax(counts)]
-
-    return out
-
-
-def enforce_minimum_motif_size(labels: np.ndarray, min_size: int) -> np.ndarray:
-    """
-    Reassign any connected region (4-connectivity) smaller than `min_size x min_size`
-    pixels to its largest neighboring label.
-
-    Uses pixel area (min_size**2) as the threshold rather than literal block size,
-    which is the standard interpretation of "minimum motif size N" in weaving.
-
-    Iterates until no small regions remain (or a safety cap is reached) so that
-    merging doesn't itself create new small regions.
-
-    min_size=1 is a no-op. min_size=2 means "no region smaller than 4 pixels".
-    """
-    if min_size <= 1:
+    shuttle_ids = [int(v) for v in np.unique(labels) if v != 0]
+    if not shuttle_ids:
         return labels.copy()
 
-    threshold = min_size * min_size
-    out = labels.copy()
+    # Step 1 & 2: per-shuttle morphological closing then opening.
+    # Operate on a clean canvas: clear all shuttle pixels first, then
+    # write back each shuttle's cleaned mask. This avoids overlap
+    # ambiguity when closing for shuttle A would touch shuttle B's pixels.
+    out = np.zeros_like(labels)
+    close_kernel = np.ones((MORPH_CLOSE_SIZE, MORPH_CLOSE_SIZE), np.uint8)
+    open_kernel = np.ones((MORPH_OPEN_SIZE, MORPH_OPEN_SIZE), np.uint8)
 
-    # Safety cap on iteration; in practice 2-3 passes is enough.
-    for _iteration in range(5):
-        changed = _merge_small_regions_once(out, threshold)
-        if not changed:
-            break
+    for sh in shuttle_ids:
+        mask = (labels == sh).astype(np.uint8)
+        if mask.sum() == 0:
+            continue
+        # Closing: fills holes within the motif body.
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, close_kernel)
+        # Opening: removes thin outlier strokes.
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, open_kernel)
+        # Where this shuttle now claims a pixel, write its label. In the
+        # rare case of multi-shuttle claim (because closing expanded both),
+        # the LATER shuttle wins. Shuttles are processed in label order so
+        # higher-numbered shuttles take precedence. This is a known limit;
+        # for textured brocade output the difference is negligible.
+        out[mask == 1] = sh
+
+    # Step 3: drop tiny connected regions per shuttle.
+    out = _drop_small_regions(out, min_size=MIN_REGION_PIXELS)
 
     return out
 
 
-def _merge_small_regions_once(labels: np.ndarray, threshold: int) -> bool:
+def _drop_small_regions(labels: np.ndarray, min_size: int) -> np.ndarray:
     """
-    Single pass: find each connected region under `threshold` pixels and
-    reassign it to the label of its largest neighboring region.
+    For each shuttle, find connected components smaller than `min_size`
+    pixels (4-connectivity) and reassign them to background (label 0).
 
-    Mutates `labels` in place. Returns True if any change was made.
+    Single pass; the previous morphology step has already eliminated most
+    candidates, so iterating is unnecessary.
     """
-    changed = False
-    unique_labels = np.unique(labels)
-
-    for lbl in unique_labels:
-        mask = labels == lbl
-        # 4-connected labeling of regions of this color
-        component_ids, num_components = ndimage.label(mask)
-        if num_components == 0:
+    out = labels.copy()
+    for sh in np.unique(out):
+        if sh == 0:
             continue
-
-        # Region sizes (component_ids 1..num_components; 0 is "not this label")
-        sizes = ndimage.sum(mask, component_ids, index=range(1, num_components + 1))
-
+        mask = (out == sh).astype(np.uint8)
+        comp_ids, n_comps = ndimage.label(mask)
+        if n_comps == 0:
+            continue
+        sizes = ndimage.sum(mask, comp_ids, index=range(1, n_comps + 1))
         for comp_id, size in enumerate(sizes, start=1):
-            if size >= threshold:
-                continue
-            # Find neighboring labels via dilation of this component
-            comp_mask = component_ids == comp_id
-            dilated = ndimage.binary_dilation(comp_mask)
-            border = dilated & ~comp_mask
-            border_labels = labels[border]
-            border_labels = border_labels[border_labels != lbl]
-            if border_labels.size == 0:
-                # No different-label neighbors (component touches only itself
-                # or image edge). Leave alone.
-                continue
-            vals, counts = np.unique(border_labels, return_counts=True)
-            new_label = vals[np.argmax(counts)]
-            labels[comp_mask] = new_label
-            changed = True
-
-    return changed
+            if size < min_size:
+                out[comp_ids == comp_id] = 0
+    return out

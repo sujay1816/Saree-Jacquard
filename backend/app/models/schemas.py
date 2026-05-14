@@ -17,7 +17,6 @@ from app.config import (
     MIN_CARDS,
     MIN_PINS,
     MIN_SHUTTLES,
-    MOTIF_MIN_SIZE_MAX,
 )
 
 
@@ -33,15 +32,6 @@ class ConversionSettings(BaseModel):
     cards: int = Field(..., ge=MIN_CARDS, le=MAX_CARDS, description="Output BMP height")
     shuttles: int = Field(
         ..., ge=MIN_SHUTTLES, le=MAX_SHUTTLES, description="Number of thread shuttles"
-    )
-    motif_cleanup: bool = Field(
-        False, description="Enable minimum motif size cleanup"
-    )
-    motif_min_size: int = Field(
-        2,
-        ge=1,
-        le=MOTIF_MIN_SIZE_MAX,
-        description="Minimum motif size in pixels (when motif_cleanup is on)",
     )
 
 

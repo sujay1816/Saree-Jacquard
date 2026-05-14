@@ -18,9 +18,12 @@ from PIL import Image
 
 from app.config import (
     BILATERAL_D,
+    BILATERAL_PASSES,
     BILATERAL_SIGMA_COLOR,
     BILATERAL_SIGMA_SPACE,
+    GAUSSIAN_BLUR_KSIZE,
     MAX_INPUT_LONG_EDGE,
+    MEDIAN_BLUR_KSIZE,
 )
 
 
@@ -59,26 +62,43 @@ def auto_resize_for_processing(
     return img.resize((new_w, new_h), Image.LANCZOS)
 
 
-def apply_bilateral_filter(rgb: np.ndarray) -> np.ndarray:
+def apply_smoothing(rgb: np.ndarray) -> np.ndarray:
     """
-    Smooth gradients while keeping motif edges crisp.
+    Aggressively smooth the input to flatten internal motif texture while
+    keeping motif boundaries sharp.
 
-    Bilateral filter is slower than Gaussian but it's the right tool here:
-    it averages within color similarity windows, so smooth areas (sky-like
-    gradients in a saree photo) get smoothed but hard edges between
-    motif and background are preserved.
+    Tuned for textured brocade close-ups (real-world saree photos), which
+    have internal fabric texture from the woven warp/weft that would
+    otherwise survive into k-means as noise clusters.
+
+    Three-stage pipeline:
+      1. Bilateral filter, multiple passes - smooths within color-similar
+         regions, preserves edges. Run multiple times to flatten harder.
+      2. Median blur - smashes remaining high-frequency texture without
+         softening edges much.
+      3. Light Gaussian - tames any pixel-level noise from the median step.
 
     Input/output: HxWx3 uint8 RGB array.
     """
-    # OpenCV uses BGR internally for color ops but bilateralFilter is
-    # channel-order-agnostic since it works on numerical similarity, so
-    # we can pass RGB directly.
-    return cv2.bilateralFilter(
-        rgb,
-        d=BILATERAL_D,
-        sigmaColor=BILATERAL_SIGMA_COLOR,
-        sigmaSpace=BILATERAL_SIGMA_SPACE,
-    )
+    out = rgb
+    for _ in range(BILATERAL_PASSES):
+        out = cv2.bilateralFilter(
+            out,
+            d=BILATERAL_D,
+            sigmaColor=BILATERAL_SIGMA_COLOR,
+            sigmaSpace=BILATERAL_SIGMA_SPACE,
+        )
+    out = cv2.medianBlur(out, MEDIAN_BLUR_KSIZE)
+    out = cv2.GaussianBlur(out, (GAUSSIAN_BLUR_KSIZE, GAUSSIAN_BLUR_KSIZE), 0)
+    return out
+
+
+# Back-compat alias - the pipeline historically called apply_bilateral_filter.
+# Keeping the old name as a thin wrapper means the pipeline.py call site
+# doesn't have to change.
+def apply_bilateral_filter(rgb: np.ndarray) -> np.ndarray:
+    """Deprecated name; calls apply_smoothing()."""
+    return apply_smoothing(rgb)
 
 
 def rgb_to_lab_pixels(rgb: np.ndarray) -> np.ndarray:
